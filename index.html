@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Pikachu Surf - Secret Command Version</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #00b0ff; font-family: sans-serif; }
+        canvas { display: block; }
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; color: white; text-shadow: 2px 2px 0 #000; pointer-events: none; }
+        #energy-bar { width: 200px; height: 15px; background: rgba(0,0,0,0.5); border: 2px solid white; margin-top: 5px; }
+        #energy-fill { width: 100%; height: 100%; background: #00e5ff; }
+        /* デバッグ用表示 */
+        #debug-overlay { 
+            position: absolute; top: 10px; right: 10px; color: #ff0; 
+            background: rgba(0,0,0,0.7); padding: 10px; display: none; 
+            font-family: monospace; border: 1px solid #ff0;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="score" style="font-size: 24px;">Score: 0</div>
+        <div>ENERGY (Hold 'F' to Boost)</div>
+        <div id="energy-bar"><div id="energy-fill"></div></div>
+    </div>
+
+    <div id="debug-overlay">DEBUG MODE: ON (INVINCIBLE)</div>
+
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const energyEl = document.getElementById('energy-fill');
+    const debugOverlay = document.getElementById('debug-overlay');
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    let score = 0;
+    let energy = 100;
+    let gameActive = true;
+    let frame = 0;
+    const keys = {};
+
+    // --- デバッグモード用変数 ---
+    let debugMode = false;
+    let inputHistory = "";
+    const secretWord = "debug";
+
+    const pikaImg = new Image();
+    pikaImg.src = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/25.png';
+    const creeperImg = new Image();
+    creeperImg.src = 'https://raw.githubusercontent.com/MarvNC/Creeper-Face/master/creeper.png';
+
+    const player = { x: 0, y: 100, width: 80, height: 80, speed: 8 };
+    player.x = canvas.width / 2 - 40;
+
+    const obstacles = [];
+    const energyBlocks = [];
+
+    // 入力イベント
+    window.addEventListener('keydown', e => {
+        keys[e.code] = true;
+
+        // タイピング履歴の記録
+        inputHistory += e.key.toLowerCase();
+        if (inputHistory.length > 10) inputHistory = inputHistory.slice(-10);
+
+        // "debug" と打たれたかチェック
+        if (inputHistory.includes(secretWord)) {
+            debugMode = !debugMode;
+            inputHistory = ""; // リセット
+            debugOverlay.style.display = debugMode ? 'block' : 'none';
+            console.log("Debug mode toggled: " + debugMode);
+        }
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function update() {
+        if (!gameActive) return;
+
+        let isBoosting = (keys['KeyF'] || keys['Keyf']) && energy > 0;
+        let currentSpeed = isBoosting ? 18 : player.speed;
+
+        if (isBoosting) {
+            energy -= 0.7;
+        } else if (energy < 100) {
+            energy += 0.1;
+        }
+        energyEl.style.width = Math.max(0, energy) + "%";
+
+        if (keys['ArrowLeft'] && player.x > 0) player.x -= currentSpeed;
+        if (keys['ArrowRight'] && player.x < canvas.width - player.width) player.x += currentSpeed;
+        if (keys['ArrowUp'] && player.y > 0) player.y -= currentSpeed;
+        if (keys['ArrowDown'] && player.y < canvas.height - player.height) player.y += currentSpeed;
+
+        frame++;
+
+        if (frame % 30 === 0) {
+            obstacles.push({ x: Math.random()*(canvas.width-60), y: canvas.height, w: 60, h: 60 });
+        }
+
+        if (frame % 40 === 0 && Math.random() < 0.5) {
+            energyBlocks.push({ x: Math.random()*(canvas.width-40), y: -40, w: 40, h: 40 });
+        }
+
+        // 敵の移動と衝突
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+            obstacles[i].y -= 6;
+            let o = obstacles[i];
+            
+            if (player.x < o.x + o.w && player.x + player.width > o.x && player.y < o.y + o.h && player.y + player.height > o.y) {
+                // デバッグモードがOFFの時だけ死亡
+                if (!debugMode) {
+                    gameActive = false;
+                    alert("Game Over! Score: " + score);
+                    location.reload();
+                }
+            }
+            if (o.y < -60) { obstacles.splice(i, 1); score += 10; scoreEl.innerText = "Score: " + score; }
+        }
+
+        for (let i = energyBlocks.length - 1; i >= 0; i--) {
+            energyBlocks[i].y += 4;
+            let e = energyBlocks[i];
+            if (player.x < e.x + e.w && player.x + player.width > e.x && player.y < e.y + e.h && player.y + player.height > e.y) {
+                energy = Math.min(100, energy + 30);
+                energyBlocks.splice(i, 1);
+            } else if (e.y > canvas.height) {
+                energyBlocks.splice(i, 1);
+            }
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        energyBlocks.forEach(e => {
+            ctx.fillStyle = '#00e5ff';
+            ctx.fillRect(e.x, e.y, e.w, e.h);
+            ctx.strokeStyle = 'white';
+            ctx.strokeRect(e.x, e.y, e.w, e.h);
+        });
+
+        obstacles.forEach(o => {
+            if (creeperImg.complete && creeperImg.naturalWidth !== 0) {
+                ctx.drawImage(creeperImg, o.x, o.y, o.w, o.h);
+            } else {
+                ctx.fillStyle = 'green';
+                ctx.fillRect(o.x, o.y, o.w, o.h);
+            }
+            // デバッグ中は敵の枠を赤くする
+            if (debugMode) {
+                ctx.strokeStyle = 'red';
+                ctx.strokeRect(o.x, o.y, o.w, o.h);
+            }
+        });
+
+        // プレイヤー
+        if (keys['KeyF'] && energy > 0) {
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = 'white';
+        }
+        if (pikaImg.complete && pikaImg.naturalWidth !== 0) {
+            ctx.drawImage(pikaImg, player.x, player.y, player.width, player.height);
+        } else {
+            ctx.fillStyle = 'yellow';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+        }
+
+        // デバッグ中はプレイヤーの枠を緑にする
+        if (debugMode) {
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = '#0f0';
+            ctx.strokeRect(player.x, player.y, player.width, player.height);
+        }
+
+        ctx.shadowBlur = 0;
+        update();
+        requestAnimationFrame(draw);
+    }
+
+    draw();
+</script>
+</body>
+</html>
